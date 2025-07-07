@@ -1,0 +1,291 @@
+plugins {
+    id 'java'
+    id 'io.qameta.allure' version '2.11.2'
+}
+
+group = 'com.apust'
+version = '1.0-SNAPSHOT'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'io.appium:java-client:9.0.0'
+    implementation ('io.qameta.allure:allure-testng:2.20.1'){
+        exclude group: 'org.testng', module: 'testng'
+    }
+
+    implementation('io.rest-assured:rest-assured:5.4.0') {
+        exclude group: 'org.codehaus.groovy'
+        exclude group: 'commons-codec', module: 'commons-codec'
+    }
+    implementation 'commons-codec:commons-codec:1.15'
+
+    implementation ('ru.yandex.qatools.ashot:ashot:1.5.4'){
+        exclude group: 'commons-io', module: 'commons-io'
+        exclude group: 'com.google.code.gson'
+    }
+    implementation 'commons-io:commons-io:2.14.0'
+    implementation 'com.google.code.gson:gson:2.8.9'
+
+    implementation 'org.slf4j:slf4j-api:2.0.9'
+    runtimeOnly 'ch.qos.logback:logback-classic:1.5.13'
+    testImplementation 'org.testng:testng:7.9.0'
+}
+
+
+final def logsDir = file("build/logs")
+
+def resolveAppiumCmd() {
+    if (project.hasProperty('appiumCmd')) {
+        def custom = project.getProperty('appiumCmd')
+        if (!file(custom).exists()) throw new GradleException("appiumCmd not found: $custom")
+        return custom
+    }
+    def os = org.gradle.internal.os.OperatingSystem.current()
+    if (os.isWindows()) {
+        def path = "${System.getenv("APPDATA")}\\npm\\appium.cmd"
+        if (file(path).exists()) return path
+    } else {
+        def which = ['which', 'appium'].execute().text.trim()
+        if (which && file(which).exists()) return which
+    }
+
+    throw new GradleException("Appium not found. Set -PappiumCmd or install globally.")
+}
+
+ext.appiumCmd = resolveAppiumCmd()
+def isWindows = org.gradle.internal.os.OperatingSystem.current().isWindows()
+
+test {
+    useTestNG {
+        suites 'src/test/resources/testng.xml'
+    }
+    systemProperty 'allure.results.directory', 'allure-results'
+    testLogging {
+        events "passed", "skipped", "failed"
+        showStandardStreams = true
+    }
+    outputs.upToDateWhen { false }
+}
+
+tasks.register('00_prepareLogsDir') {
+    group = 'aqa'
+    doLast {
+        logsDir.mkdirs()
+    }
+}
+
+def registerAppiumBackgroundTask(String taskName, String portDefault = '4723', String portProp = 'port', String basePathProp = 'basePath', File logsDirRef) {
+    tasks.register(taskName) {
+        group = 'aqa'
+        description = "Starts Appium server '${taskName}' in background"
+        dependsOn '00_prepareLogsDir'
+
+        doLast {
+            def port = (project.findProperty(portProp) ?: portDefault) as String
+            def basePath = (project.findProperty(basePathProp) ?: '/') as String
+            def logFile = new File(logsDirRef, "appium-${port}.log")
+
+            println "Starting Appium server '${taskName}' on port ${port}..."
+            def command = [
+                    appiumCmd.toString(),
+                    '-p', port.toString(),
+                    '--base-path', basePath.toString(),
+                    '--allow-insecure', 'session_discovery',
+                    '--log-level', 'debug',
+                    '--log', logFile.absolutePath.toString()
+            ] as String[]
+
+            new ProcessBuilder(command)
+                    .redirectErrorStream(true)
+                    .redirectOutput(logFile)
+                    .start()
+            println "Appium '${taskName}' started. Logs: ${logFile}"
+        }
+    }
+}
+
+registerAppiumBackgroundTask('01_startAppium4723', '4723', 'port', 'basePath', logsDir)
+registerAppiumBackgroundTask('01_startAppium4725', '4725', 'port2', 'basePath2', logsDir)
+
+
+def registerAppiumConsoleTask(String taskName, String portDefault = '4723', String portProp = 'port', String basePathProp = 'basePath', File logsDirRef) {
+    tasks.register(taskName) {
+        group = 'aqa'
+        description = "Opens terminal and runs Appium (${taskName}) with live logs"
+        dependsOn '00_prepareLogsDir'
+
+        doLast {
+            def os = org.gradle.internal.os.OperatingSystem.current()
+            def port = findProperty(portProp) ?: portDefault
+            def basePath = findProperty(basePathProp) ?: '/'
+            def timestamp = new Date().format("yyyyMMdd_HHmmss")
+            def logFile = new File(logsDirRef, "appium-${port}-${timestamp}.log")
+            def command = "\"${appiumCmd}\" -p ${port} --base-path ${basePath} --allow-insecure session_discovery --log-level debug --log ${logFile.absolutePath}".toString()
+
+            println "Launching Appium in terminal on port ${port}"
+            println "Logs: ${logFile}"
+
+            launchTerminalWithCommand(os, command)
+
+            sleep(1000)
+            if (!logFile.exists() || logFile.length() == 0) {
+                println "Appium log not created or empty: ${logFile}"
+            }
+        }
+    }
+}
+
+registerAppiumConsoleTask('01_startAppiumConsole4723', '4723', 'port', 'basePath', logsDir)
+registerAppiumConsoleTask('01_startAppiumConsole4725', '4725', 'port2', 'basePath2', logsDir)
+
+
+def launchTerminalWithCommand(os, String command) {
+    if (os.isMacOsX()) {
+        // Используем AppleScript для открытия нового окна терминала
+        def script = """
+            tell application "Terminal"
+                activate
+                do script "${command.replace('"', '\\"')}"
+            end tell
+        """
+        ['osascript', '-e', script].execute()
+    } else if (os.isWindows()) {
+        ["cmd", "/c", "start", "cmd", "/k", command].execute()
+    } else if (os.isLinux()) {
+        ["gnome-terminal", "--", "bash", "-c", command].execute()
+    } else {
+        throw new UnsupportedOperationException("Unsupported OS: ${os}")
+    }
+}
+
+tasks.register('02_cleanTests') {
+    group = 'aqa'
+    dependsOn 'clean'
+}
+
+tasks.register('03_buildTests') {
+    group = 'aqa'
+    dependsOn 'testClasses'
+}
+
+tasks.register('04_testDefault', Test) {
+    group = 'aqa'
+    useTestNG {
+        suites 'src/test/resources/testng.xml'
+    }
+    systemProperty 'allure.results.directory', 'allure-results'
+    testLogging {
+        events "passed", "skipped", "failed"
+        showStandardStreams = true
+    }
+    outputs.upToDateWhen { false }
+}
+
+tasks.register('05_testAndroid', Test) {
+    group = 'aqa'
+    useTestNG {
+        suites 'src/test/resources/testng/android.xml'
+    }
+    systemProperty 'allure.results.directory', 'allure-results'
+    testLogging {
+        events "passed", "skipped", "failed"
+        showStandardStreams = true
+    }
+    outputs.upToDateWhen { false }
+}
+
+tasks.register('05_testAndroidParallel', Test) {
+    group = 'aqa'
+    useTestNG {
+        suites 'src/test/resources/testng/android_parallel.xml'
+    }
+    systemProperty 'allure.results.directory', 'allure-results'
+    testLogging {
+        events "passed", "skipped", "failed"
+        showStandardStreams = true
+    }
+    outputs.upToDateWhen { false }
+}
+
+tasks.register('06_testIos', Test) {
+    group = 'aqa'
+    useTestNG {
+        suites 'src/test/resources/testng/ios.xml'
+    }
+    systemProperty 'allure.results.directory', 'allure-results'
+    testLogging {
+        events "passed", "skipped", "failed"
+        showStandardStreams = true
+    }
+    outputs.upToDateWhen { false }
+}
+
+tasks.register('06_testIosParallel', Test) {
+    group = 'aqa'
+    useTestNG {
+        suites 'src/test/resources/testng/ios_parallel.xml'
+    }
+    systemProperty 'allure.results.directory', 'allure-results'
+    testLogging {
+        events "passed", "skipped", "failed"
+        showStandardStreams = true
+    }
+    outputs.upToDateWhen { false }
+}
+
+def system = org.gradle.internal.os.OperatingSystem.current()
+def allureCmd = system.isWindows() ? 'allure.bat' : 'allure'
+
+tasks.register('07_allureGenerate', Exec) {
+    group = 'aqa'
+    commandLine allureCmd, 'generate', 'allure-results', '--clean', '-o', 'allure-report'
+}
+
+tasks.register('09_stopAppium', Exec) {
+    group = 'aqa'
+    description = 'Stops all Appium processes'
+    commandLine isWindows
+            ? ['taskkill', '/F', '/IM', 'node.exe', '/T']
+            : ['pkill', '-f', 'appium']
+    doFirst {
+        println "Stopping Appium processes (${isWindows ? 'Windows' : 'Unix'})..."
+    }
+}
+
+tasks.register('08_openAllureServe', Exec) {
+    group = 'aqa'
+    description = 'Serves Allure report via local web server'
+    dependsOn('07_allureGenerate')
+    commandLine allureCmd, 'serve', 'allure-results'
+}
+
+tasks.register('10_cleanAllure') {
+    group = 'aqa'
+    description = 'Cleans Allure results and report directories'
+
+    doLast {
+        def resultsDir = file('allure-results')
+        def reportDir = file('allure-report')
+
+        if (resultsDir.exists()) {
+            println "Deleting: ${resultsDir}"
+            resultsDir.deleteDir()
+        } else {
+            println "No allure-results directory to delete"
+        }
+
+        if (reportDir.exists()) {
+            println "Deleting: ${reportDir}"
+            reportDir.deleteDir()
+        } else {
+            println "No allure-report directory to delete"
+        }
+
+        println "Allure cleanup complete"
+    }
+}
+
+
