@@ -26,7 +26,8 @@ public class OnboardingScreen extends BaseScreen {
     @iOS(classChain = "Table/XCUIElementTypeCell/XCUIElementTypeStaticText")
     private MobileLocator languageList;
 
-    @Android(xpath = "Button[@text = 'Continuee']")
+    @Android(xpath = "Button[@text = 'ThereIsBugToShowAllureOnFailureAttachments']")
+//    @Android(xpath = "Button[@text = 'Continue']")
     @iOS(classChain = "StaticText[`name == 'Next'`]")
     private MobileLocator onboardingNextButton;
 
