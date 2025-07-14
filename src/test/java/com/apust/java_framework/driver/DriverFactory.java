@@ -33,6 +33,9 @@ public class DriverFactory {
             caps.setCapability("platformVersion", ConfigManager.getRequired("platformVersion", context));
             caps.setCapability("automationName", ConfigManager.getRequired("automationName", context));
 
+            caps.setCapability("adbExecTimeout", 60000);
+            caps.setCapability("newCommandTimeout", 120);
+
             String udid = ConfigManager.get("udid", context);
             if (udid != null && !udid.isEmpty()) {
                 caps.setCapability("udid", udid);
