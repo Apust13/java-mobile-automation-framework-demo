@@ -4,6 +4,7 @@ import com.apust.java_framework.driver.DriverFactory;
 import com.apust.java_framework.driver.DriverFactory.Platform;
 import com.apust.java_framework.listeners.*;
 import com.apust.java_framework.logging.LogBridge;
+import com.apust.java_framework.utils.AllureUtils;
 import com.apust.java_framework.utils.AppManager;
 import com.apust.java_framework.utils.ConfigManager;
 import io.appium.java_client.AppiumDriver;
@@ -43,6 +44,7 @@ public abstract class BaseTest implements HasDriver {
     @AfterMethod
     public void tearDown() {
 //        cleanUpiOS();
+        AllureUtils.attachScreenshot(driver, "Last state screenshot");
         DriverFactory.quitDriver();
     }
 }
