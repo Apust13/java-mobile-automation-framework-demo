@@ -1,0 +1,10 @@
+services:
+  tests:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: test_runner_debug
+    command: sleep infinity
+    volumes:
+      - allure-results:/app/allure-results
+

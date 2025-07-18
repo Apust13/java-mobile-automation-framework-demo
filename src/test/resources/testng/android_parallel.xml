@@ -1,7 +1,8 @@
 <!DOCTYPE suite SYSTEM "https://testng.org/testng-1.0.dtd" >
 <suite name="Parallel_Suite_Android" parallel="tests" thread-count="2">
     <parameter name="platform" value="ANDROID"/>
-    <parameter name="appiumHost" value="127.0.0.1"/>
+<!--    <parameter name="appiumHost" value="127.0.0.1"/>-->
+    <parameter name="appiumHost" value="host.docker.internal"/>
     <parameter name="platformVersion" value="16.0"/>
     <parameter name="appPackage" value="org.wikipedia.alpha"/>
     <parameter name="appActivity" value="org.wikipedia.main.MainActivity"/>
